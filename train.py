@@ -1,7 +1,9 @@
 import math
 
+import tokenizers
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from tokenizers import ByteLevelBPETokenizer
 from torch.utils.data import DataLoader, Dataset
 
@@ -44,13 +46,14 @@ class DickinsonPoemsDataset(Dataset):
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=10000):
         super().__init__()
+        pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(
             torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
         )
-        pe = torch.zeros(max_len).unsqueeze(0)
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
 
     def forward(self, x):
@@ -123,7 +126,7 @@ class LanguageModel(nn.Module):
     def __init__(
         self,
         vocab_size,
-        d_model=256,
+        d_model=128,
         n_heads=4,
         n_layers=4,
         dim_feedforward=1024,
@@ -157,10 +160,94 @@ class LanguageModel(nn.Module):
         return logits
 
 
+def train(model, dataloader, num_epochs=5, lr=3e-4, device="cuda"):
+    model.to(device)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
+    criterion = nn.CrossEntropyLoss()
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0.0
+
+        print(len(dataloader))
+
+        for i, (batch_x, batch_y) in enumerate(dataloader):
+            batch_x = batch_x.to(device)
+            batch_y = batch_y.to(device)
+
+            optimizer.zero_grad()
+            logits = model(batch_x)
+            logits = logits.view(-1, logits.size(-1))
+            targets = batch_y.view(-1)
+
+            loss = criterion(logits, targets)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+
+        avg_loss = total_loss / len(dataloader)
+        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
+
+
+import torch.nn.functional as F
+
+
+def generate_text(
+    model,
+    start_ids,
+    max_new_tokens=50,
+    temperature=1.0,
+    top_k=None,
+    device="cuda",
+):
+    model.eval()
+    model = model.to(device)
+
+    if isinstance(start_ids, list):
+        x = torch.tensor([start_ids], dtype=torch.long, device=device)
+    else:
+        x = start_ids.to(device)
+
+    with torch.no_grad():
+        for _ in range(max_new_tokens):
+            logits = model(x)
+            logits = logits[:, -1, :]
+
+            logits = logits / temperature
+
+            if top_k is not None:
+                _, indices = torch.topk(logits, top_k)
+                mask = torch.ones_like(logits, dtype=torch.bool)
+                mask.scatter_(1, indices, False)
+                logits = logits.masked_fill(mask, float("-inf"))
+
+            probs = F.softmax(logits, dim=-1)
+            next_id = torch.multinomial(probs, num_samples=1)
+            x = torch.cat([x, next_id], dim=1)
+
+    return x[0].tolist()
+
+
 batch_size = 32
 
 dataset = DickinsonPoemsDataset("data/dickinson_clean.txt")
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-for batch_x, batch_y in dataloader:
-    pass
+model = LanguageModel(
+    vocab_size=2000,
+    d_model=256,
+    n_heads=4,
+    n_layers=4,
+    dim_feedforward=1024,
+    max_seq_len=64,
+)
+
+train(model, dataloader, num_epochs=10, lr=3e-4, device="cpu")
+
+prompt = "Hope is the thing with feathers"
+tokeniser = ByteLevelBPETokenizer()
+encoded_prompt = tokeniser.encode(prompt).ids
+gen_ids = generate_text(
+    model, encoded_prompt, max_new_tokens=50, temperature=0.8, top_k=50
+)
+generated_text = tokeniser.decode(gen_ids)
+print("Generated poem:\n", generated_text)
