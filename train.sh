@@ -9,4 +9,4 @@ python train.py \
   --num_epochs 100 \
   --learning_rate 0.0001 \
   --dropout 0.1 \
-  --device cpu
+  --device cuda

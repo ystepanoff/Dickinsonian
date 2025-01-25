@@ -4,9 +4,7 @@ import click
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from fsspec.registry import default
 from tokenizers import ByteLevelBPETokenizer
-from torch.nn.functional import dropout
 from torch.utils.data import DataLoader, Dataset
 
 
