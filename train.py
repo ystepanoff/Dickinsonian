@@ -1,9 +1,12 @@
 import math
 
+import click
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from fsspec.registry import default
 from tokenizers import ByteLevelBPETokenizer
+from torch.nn.functional import dropout
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -167,8 +170,6 @@ def train(model, dataloader, num_epochs=5, lr=3e-4, device="cuda"):
         model.train()
         total_loss = 0.0
 
-        print(len(dataloader))
-
         for i, (batch_x, batch_y) in enumerate(dataloader):
             batch_x = batch_x.to(device)
             batch_y = batch_y.to(device)
@@ -183,69 +184,63 @@ def train(model, dataloader, num_epochs=5, lr=3e-4, device="cuda"):
             optimizer.step()
             total_loss += loss.item()
 
+            if i % 10 == 0:
+                print(f"Epoch [{epoch+1}/{num_epochs}], Step [{i}/{len(dataloader)}], Loss: {loss.item():.4f}")
+
         avg_loss = total_loss / len(dataloader)
         print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
 
 
-import torch.nn.functional as F
+def save(model, path):
+    torch.save(model.state_dict(), path)
 
 
-def generate_text(
-    model,
-    start_ids,
-    max_new_tokens=50,
-    temperature=1.0,
-    top_k=None,
-    device="cuda",
+@click.command()
+@click.option("--data_path", type=click.Path(exists=True), help="Path to the data file", default="data/dickinson_clean.txt")
+@click.option("--save_path", type=click.types.STRING, help="Path to save the model", default="models/dickinsonian.pth")
+@click.option("--vocab_size", type=click.types.INT, help="Vocabulary size", default=2000)
+@click.option("--batch_size", type=click.types.INT, help="Batch size", default=32)
+@click.option("--d_model", type=click.types.INT, help="Model dimension", default=256)
+@click.option("--n_heads", type=click.types.INT, help="Number of heads", default=4)
+@click.option("--n_layers", type=click.types.INT, help="Number of layers", default=4)
+@click.option("--dim_feedforward", type=click.types.INT, help="Feedforward dimension", default=1024)
+@click.option("--max_seq_len", type=click.types.INT, help="Maximum sequence length", default=64)
+@click.option("--dropout", type=click.types.FLOAT, help="Dropout rate", default=0.1)
+@click.option("--num_epochs", type=click.types.INT, help="Number of epochs", default=100)
+@click.option("--learning_rate", type=click.types.FLOAT, help="Learning rate", default=3e-4)
+@click.option("--device", type=click.types.STRING, help="Device to use", default="cuda")
+def main(
+    data_path,
+    save_path,
+    vocab_size,
+    batch_size,
+    d_model,
+    n_heads,
+    n_layers,
+    dim_feedforward,
+    max_seq_len,
+    dropout,
+    num_epochs,
+    learning_rate,
+    device,
 ):
-    model.eval()
-    model = model.to(device)
+    dataset = DickinsonPoemsDataset(data_path, seq_len=max_seq_len)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    if isinstance(start_ids, list):
-        x = torch.tensor([start_ids], dtype=torch.long, device=device)
-    else:
-        x = start_ids.to(device)
-    with torch.no_grad():
-        for _ in range(max_new_tokens):
-            logits = model(x)
-            logits = logits[:, -1, :]
+    model = LanguageModel(
+        vocab_size=vocab_size,
+        d_model=d_model,
+        n_heads=n_heads,
+        n_layers=n_layers,
+        dim_feedforward=dim_feedforward,
+        max_seq_len=max_seq_len,
+        dropout=dropout,
+    )
 
-            logits = logits / temperature
-
-            if top_k is not None:
-                _, indices = torch.topk(logits, top_k)
-                mask = torch.ones_like(logits, dtype=torch.bool)
-                mask.scatter_(1, indices, False)
-                logits = logits.masked_fill(mask, float("-inf"))
-
-            probs = F.softmax(logits, dim=-1)
-            next_id = torch.multinomial(probs, num_samples=1)
-            x = torch.cat([x, next_id], dim=1)
-
-    return x[0].tolist()
+    train(model, dataloader, num_epochs=num_epochs, lr=learning_rate, device=device)
+    save(model, save_path)
 
 
-batch_size = 32
+if __name__ == "__main__":
+    main()
 
-dataset = DickinsonPoemsDataset("data/dickinson_clean.txt")
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-model = LanguageModel(
-    vocab_size=2000,
-    d_model=256,
-    n_heads=4,
-    n_layers=4,
-    dim_feedforward=1024,
-    max_seq_len=64,
-)
-
-train(model, dataloader, num_epochs=10, lr=3e-4, device="cpu")
-
-prompt = "Hope is the thing with feathers"
-tokeniser = ByteLevelBPETokenizer()
-encoded_prompt = tokeniser.encode(prompt).ids
-gen_ids = generate_text(
-    model, encoded_prompt, max_new_tokens=50, temperature=0.8, top_k=50
-)
-generated_text = tokeniser.decode(gen_ids)
-print("Generated poem:\n", generated_text)
