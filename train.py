@@ -1,6 +1,5 @@
 import math
 
-import tokenizers
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -206,7 +205,6 @@ def generate_text(
         x = torch.tensor([start_ids], dtype=torch.long, device=device)
     else:
         x = start_ids.to(device)
-
     with torch.no_grad():
         for _ in range(max_new_tokens):
             logits = model(x)
