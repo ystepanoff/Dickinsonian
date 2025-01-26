@@ -1,4 +1,5 @@
 import math
+import os
 
 import click
 import torch
@@ -160,7 +161,14 @@ class LanguageModel(nn.Module):
         return logits
 
 
-def train(model, dataloader, num_epochs=5, lr=3e-4, device="cuda"):
+def train(
+    model,
+    dataloader,
+    num_epochs=5,
+    lr=3e-4,
+    device="cuda",
+    save_path="checkpoints/",
+):
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
@@ -189,13 +197,14 @@ def train(model, dataloader, num_epochs=5, lr=3e-4, device="cuda"):
         print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
 
 
-def save(model, path):
-    torch.save(model.state_dict(), path)
+def save(model, path, epoch=None):
+    filename = f"checkpoint.{epoch}.pth" if epoch is not None else "checkpoint.pth"
+    torch.save(model.state_dict(), os.path.join(path, filename))
 
 
 @click.command()
 @click.option("--data_path", type=click.Path(exists=True), help="Path to the data file", default="data/dickinson_clean.txt")
-@click.option("--save_path", type=click.types.STRING, help="Path to save the model", default="models/dickinsonian.pth")
+@click.option("--save_path", type=click.types.STRING, help="Path to save the model", default="checkpoints/")
 @click.option("--vocab_size", type=click.types.INT, help="Vocabulary size", default=2000)
 @click.option("--batch_size", type=click.types.INT, help="Batch size", default=32)
 @click.option("--d_model", type=click.types.INT, help="Model dimension", default=256)
@@ -235,7 +244,7 @@ def main(
         dropout=dropout,
     )
 
-    train(model, dataloader, num_epochs=num_epochs, lr=learning_rate, device=device)
+    train(model, dataloader, num_epochs=num_epochs, lr=learning_rate, device=device, save_path=save_path)
     save(model, save_path)
 
 
