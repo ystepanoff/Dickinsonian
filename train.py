@@ -194,9 +194,9 @@ def train(model, dataloader, num_epochs=5, lr=3e-4, device="cuda", save_path="ch
 
 
 def save(model, path, epoch=None):
-    filename = "emily.pth"
+    filename = "dickinsonian.pth"
     if epoch is not None:
-        filename = f"emily.{epoch}.pth"
+        filename = f"dickinsonian.{epoch}.pth"
     torch.save(model.state_dict(), os.path.join(path, filename))
 
 

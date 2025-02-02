@@ -3,6 +3,50 @@ import torch.nn.functional as F
 from tokenizers import ByteLevelBPETokenizer
 
 
+def generate_text_nucleus(model, encoded_prompt, tokenizer, max_new_tokens=60, temperature=0.8, top_p=0.9, device='cuda', max_seq_len=128):
+    model.eval()
+    model.to(device)
+
+    input_ids = torch.tensor([encoded_prompt], dtype=torch.long, device=device)
+
+    generated_ids = []
+
+    with torch.no_grad():
+        for _ in range(max_new_tokens):
+            if input_ids.size(1) > max_seq_len:
+                input_ids = input_ids[:, -max_seq_len:]
+
+            logits = model(input_ids)[:, -1, :] / temperature
+
+            # Apply nucleus (top-p) filtering
+            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+            cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+            # Remove tokens with cumulative probability above the threshold
+            sorted_indices_to_remove = cumulative_probs > top_p
+            # Shift the mask right to keep the first token above the threshold
+            sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
+            sorted_indices_to_remove[:, 0] = 0
+
+            indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+            logits = logits.masked_fill(indices_to_remove, float('-inf'))
+
+            probs = F.softmax(logits, dim=-1)
+            next_token_id = torch.multinomial(probs, num_samples=1).item()
+
+            if next_token_id == tokenizer.token_to_id("\n"):
+                print("newline")
+
+            if next_token_id == tokenizer.token_to_id("<END>"):
+                break
+
+            generated_ids.append(next_token_id)
+            input_ids = torch.cat([input_ids, torch.tensor([[next_token_id]], device=device)], dim=1)
+
+    generated_text = tokenizer.decode(generated_ids).replace("<END>", "").strip()
+    return generated_text
+
+
 def generate_text(
     model,
     start_ids,
@@ -40,27 +84,24 @@ def generate_text(
 from main import LanguageModel
 
 model = LanguageModel(
-    vocab_size=2000,
-    d_model=2048,
-    n_heads=16,
-    n_layers=16,
-    dim_feedforward=256,
-    max_seq_len=64,
-    dropout=0.1,
+    vocab_size=7000,
+    d_model=512,
+    n_heads=8,
+    n_layers=8,
+    dim_feedforward=1024,
+    max_seq_len=96,
+    dropout=0.2,
 )
-model.load_state_dict(torch.load("checkpoints/dickinsonian.pth", weights_only=True))
+model.load_state_dict(torch.load("checkpoints_4/dickinsonian.pth", weights_only=True))
 
-prompt = "Come with me"
+prompt = "I dwell in Possibility..."
 tokeniser = ByteLevelBPETokenizer()
 tokeniser.train(
     files="data/dickinson_clean.txt",
-    vocab_size=2000,
+    vocab_size=7000,
     min_frequency=2,
     special_tokens=["<s>", "</s>", "<pad>", "<unk>", "<mask>", "<eol>", "<END>"],
 )
 encoded_prompt = tokeniser.encode(prompt).ids
-gen_ids = generate_text(
-    model, encoded_prompt, max_new_tokens=60, temperature=0.5, top_k=50
-)
-generated_text = tokeniser.decode(gen_ids)
+generated_text = generate_text_nucleus(model, encoded_prompt, tokeniser, max_new_tokens=60)
 print("Generated poem:\n", generated_text)
