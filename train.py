@@ -5,7 +5,9 @@ import click
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from fsspec.registry import default
 from tokenizers import ByteLevelBPETokenizer
+from torch.nn.functional import dropout
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -19,7 +21,7 @@ class DickinsonPoemsDataset(Dataset):
             files=data_path,
             vocab_size=2000,
             min_frequency=2,
-            special_tokens=["<s>", "</s>", "<pad>", "<unk>", "<mask>", "<eol>"],
+            special_tokens=["<s>", "</s>", "<pad>", "<unk>", "<mask>", "<eol>", "<END>"],
         )
 
         with open(data_path, "r") as data_file:
@@ -161,14 +163,7 @@ class LanguageModel(nn.Module):
         return logits
 
 
-def train(
-    model,
-    dataloader,
-    num_epochs=5,
-    lr=3e-4,
-    device="cuda",
-    save_path="checkpoints/",
-):
+def train(model, dataloader, num_epochs=5, lr=3e-4, device="cuda", save_path="checkpoints/"):
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
@@ -194,11 +189,14 @@ def train(
                 print(f"Epoch [{epoch+1}/{num_epochs}], Step [{i}/{len(dataloader)}], Loss: {loss.item():.4f}")
 
         avg_loss = total_loss / len(dataloader)
+        save(model, save_path, epoch=epoch)
         print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
 
 
 def save(model, path, epoch=None):
-    filename = f"checkpoint.{epoch}.pth" if epoch is not None else "checkpoint.pth"
+    filename = "emily.pth"
+    if epoch is not None:
+        filename = f"emily.{epoch}.pth"
     torch.save(model.state_dict(), os.path.join(path, filename))
 
 

@@ -66,10 +66,16 @@ def is_potential_title(line):
 
 def remove_titles(lines):
     cleaned = []
+    end_token = "<END>"
+    placed_end_token = False
     for line in lines:
         if is_potential_title(line):
+            if not placed_end_token:
+                cleaned.extend([end_token, ""])
+                placed_end_token = True
             continue
         cleaned.append(line)
+        placed_end_token = False
     return cleaned
 
 

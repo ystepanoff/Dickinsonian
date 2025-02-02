@@ -37,12 +37,30 @@ def generate_text(
 
     return x[0].tolist()
 
+from main import LanguageModel
 
-prompt = "Hope is the thing with feathers"
+model = LanguageModel(
+    vocab_size=2000,
+    d_model=2048,
+    n_heads=16,
+    n_layers=16,
+    dim_feedforward=256,
+    max_seq_len=64,
+    dropout=0.1,
+)
+model.load_state_dict(torch.load("checkpoints/dickinsonian.pth", weights_only=True))
+
+prompt = "Come with me"
 tokeniser = ByteLevelBPETokenizer()
+tokeniser.train(
+    files="data/dickinson_clean.txt",
+    vocab_size=2000,
+    min_frequency=2,
+    special_tokens=["<s>", "</s>", "<pad>", "<unk>", "<mask>", "<eol>", "<END>"],
+)
 encoded_prompt = tokeniser.encode(prompt).ids
 gen_ids = generate_text(
-    model, encoded_prompt, max_new_tokens=50, temperature=0.8, top_k=50
+    model, encoded_prompt, max_new_tokens=60, temperature=0.5, top_k=50
 )
 generated_text = tokeniser.decode(gen_ids)
 print("Generated poem:\n", generated_text)

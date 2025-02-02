@@ -1,12 +1,12 @@
-python train.py \
-  --vocab_size 3000 \
+python main.py \
+  --vocab_size 2000 \
   --batch_size 64 \
-  --d_model 1024 \
-  --n_heads 8 \
-  --n_layers 6 \
-  --dim_feedforward 2048 \
+  --d_model 2048 \
+  --n_heads 16 \
+  --n_layers 16 \
+  --dim_feedforward 256 \
   --max_seq_len 64 \
-  --num_epochs 100 \
-  --learning_rate 0.0001 \
+  --num_epochs 10 \
+  --learning_rate 0.00001 \
   --dropout 0.1 \
   --device cuda
