@@ -1,4 +1,4 @@
-python main.py \
+python train.py \
   --vocab_size 2000 \
   --batch_size 64 \
   --d_model 2048 \
